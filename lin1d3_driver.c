@@ -28,7 +28,7 @@
 #include "timers.h"
 
 /* The software timer period. */
-#define SW_TIMER_PERIOD_MS (1000 / portTICK_PERIOD_MS)
+#define SW_TIMER_PERIOD_MS (10 / portTICK_PERIOD_MS)
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
@@ -132,12 +132,12 @@ static void master_task(void *pvParameters)
 
 	lin1d3_handle_t* handle = (lin1d3_handle_t*)pvParameters;
 	uint8_t  ID;
-	uint8_t  lin1p3_header[] = {0x00, 0x00, 0x00};
+	uint8_t  lin1p3_header[5] = {0,1,1,1,1};
 	uint8_t  lin1p3_message[size_of_uart_buffer];
 	uint8_t  message_size = 0;
 	size_t n;
 	uint8_t  msg_idx;
-	 char master[5] = {1,1,1,1,1};
+	uint8_t master[5] = {0,1,1,1,1};
 
 
 	 /* Create the software timer. */
@@ -154,7 +154,7 @@ static void master_task(void *pvParameters)
 	/* Init/Configure the UART */
 	handle->uart_config.base = handle->config.uartBase;
 	handle->uart_config.srcclk = handle->config.srcclk;
-	handle->uart_config.baudrate = handle->config.bitrate;
+	handle->uart_config.baudrate = 500/*handle->config.bitrate*/;
 	handle->uart_config.parity = kUART_ParityDisabled;
 	handle->uart_config.stopbits = kUART_OneStopBit;
 	handle->uart_config.buffer = pvPortMalloc(size_of_uart_buffer);
@@ -206,14 +206,20 @@ static void master_task(void *pvParameters)
 
         	 /* Start timer. */
         		flag = 1;
-        	//  xTimerStart(SwTimerHandle, 0);
-        	 //while(flag == 1)
 
 
 
+        		UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_header, 1);
 
+        		for(int i = 0;i < 100000;i++)
 
-        	UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)master, 5);
+        		handle->uart_config.baudrate = 9600/*handle->config.bitrate*/;
+        		if (0 > UART_RTOS_Init(&(handle->uart_rtos_handle), &(handle->uart_handle), &(handle->uart_config)))
+        		    {
+        		        vTaskSuspend(NULL);
+        		    }
+        		UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_header, 5);
+
 
         	/* Wait for the response */
         	UART_RTOS_Receive(&(handle->uart_rtos_handle), lin1p3_message, message_size, &n);
