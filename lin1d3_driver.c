@@ -4,37 +4,9 @@
  *  Created on: Sep 14, 2018
  *      Author: Nico
  */
-/* Standard includes. */
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-
-/* Kernel includes. */
-#include "FreeRTOS.h"
-#include "task.h"
-#include "timers.h"
-
-/* Freescale includes. */
-#include "fsl_device_registers.h"
-#include "fsl_debug_console.h"
-#include "board.h"
-
-#include "pin_mux.h"
-#include "clock_config.h"
-
 #include "lin1d3_driver.h"
 #include <string.h>
 #include <fsl_debug_console.h>
-#include "timers.h"
-
-/* The software timer period. */
-#define SW_TIMER_PERIOD_MS (10 / portTICK_PERIOD_MS)
-/*******************************************************************************
- * Prototypes
- ******************************************************************************/
-/* The callback function. */
-static void SwTimerCallback(TimerHandle_t xTimer);
-
 
 #define master_stack_size_d	(256)
 #define master_task_priority (configMAX_PRIORITIES - 1)
@@ -51,8 +23,7 @@ static void SwTimerCallback(TimerHandle_t xTimer);
 static void master_task(void *pvParameters);
 static void slave_task(void *pvParameters);
 
-TimerHandle_t SwTimerHandle = NULL;
-static uint8_t  flag = 0;
+static int flagmaster = 0;
 
 /******************************************************************************
  * Public functions
@@ -85,21 +56,22 @@ lin1d3_handle_t* lin1d3_InitNode(lin1d3_nodeConfig_t config)
 	memcpy(&(handle->config), &config, sizeof(lin1d3_nodeConfig_t));
 
 	/* Create the Node Task */
+	/*
 	if(lin1d3_master_nodeType == config.type) {
-		/* Create a queue for User message requests */
+		// Create a queue for User message requests
 		handle->node_queue = xQueueCreate( master_queue_size_d, sizeof(uint8_t));
 		if(handle->node_queue == NULL){
 			vPortFree(handle);
 			return NULL;
 		}
-		/* Create a task for the node */
+		// Create a task for the node
 		master_task_name[strlen(master_task_name)-1] += node_idx++;
 		if (xTaskCreate(master_task, master_task_name, master_stack_size_d, handle, master_task_priority, &(handle->task_handle)) != pdPASS) {
 			vPortFree(handle);
 			return NULL;
 		}
 	}
-	else if(lin1d3_slave_nodeType == config.type) {
+	else*/ if(lin1d3_slave_nodeType == config.type) {
 		/* Create a task for the node */
 		slave_task_name[strlen(slave_task_name)-1] += node_idx++;
 		if (xTaskCreate(slave_task, slave_task_name, slave_stack_size_d, handle, slave_task_priority, &(handle->task_handle)) != pdPASS) {
@@ -129,23 +101,14 @@ uint32_t lin1d3_masterSendMessage(lin1d3_handle_t* handle, uint8_t ID)
  *****************************************************************************/
 static void master_task(void *pvParameters)
 {
-
 	lin1d3_handle_t* handle = (lin1d3_handle_t*)pvParameters;
 	uint8_t  ID;
-	uint8_t  lin1p3_header[5] = {0,1,1,1,1};
+	uint8_t  lin1p3_header[] = {0x55,0x15};
+	uint8_t  syncbreak[]={0x0};
 	uint8_t  lin1p3_message[size_of_uart_buffer];
 	uint8_t  message_size = 0;
 	size_t n;
 	uint8_t  msg_idx;
-	uint8_t master[5] = {0,1,1,1,1};
-
-
-	 /* Create the software timer. */
-	    SwTimerHandle = xTimerCreate("SwTimer",          /* Text name. */
-	                                 SW_TIMER_PERIOD_MS, /* Timer period. */
-	                                 pdTRUE,             /* Enable auto reload. */
-	                                 0,                  /* ID is not used. */
-	                                 SwTimerCallback);   /* The callback function. */
 
 	if(handle == NULL) {
 		vTaskSuspend(NULL);
@@ -154,7 +117,7 @@ static void master_task(void *pvParameters)
 	/* Init/Configure the UART */
 	handle->uart_config.base = handle->config.uartBase;
 	handle->uart_config.srcclk = handle->config.srcclk;
-	handle->uart_config.baudrate = 500/*handle->config.bitrate*/;
+	handle->uart_config.baudrate = handle->config.bitrate;
 	handle->uart_config.parity = kUART_ParityDisabled;
 	handle->uart_config.stopbits = kUART_OneStopBit;
 	handle->uart_config.buffer = pvPortMalloc(size_of_uart_buffer);
@@ -202,27 +165,21 @@ static void master_task(void *pvParameters)
         	}
         	message_size+=1;
         	/* Send the header */
+        	UART_SetBaudRate(UART3, handle->config.bitrate/2,CLOCK_GetFreq(UART3_CLK_SRC));
 
+        	UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)syncbreak, 1);
+        	while((kUART_TransmissionCompleteFlag & UART_GetStatusFlags(UART3))<1);
+        	//UART_ClearStatusFlags(UART3, kUART_TxDataRegEmptyFlag);
 
-        	 /* Start timer. */
-        		flag = 1;
+        	UART_SetBaudRate(UART3, handle->config.bitrate,CLOCK_GetFreq(UART3_CLK_SRC));
+        	UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_header, 2);
+        	while((kUART_TransmissionCompleteFlag & UART_GetStatusFlags(UART3))<1);
+        	//UART_ClearStatusFlags(UART3, kUART_TxDataRegEmptyFlag);
 
+        	//while((kUART_TransmissionCompleteFlag & UART_GetStatusFlags(UART4))<1);
 
-
-        		UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_header, 1);
-
-        		for(int i = 0;i < 100000;i++)
-
-        		handle->uart_config.baudrate = 9600/*handle->config.bitrate*/;
-        		if (0 > UART_RTOS_Init(&(handle->uart_rtos_handle), &(handle->uart_handle), &(handle->uart_config)))
-        		    {
-        		        vTaskSuspend(NULL);
-        		    }
-        		UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_header, 5);
-
-
-        	/* Wait for the response */
         	UART_RTOS_Receive(&(handle->uart_rtos_handle), lin1p3_message, message_size, &n);
+
 
         	/* TODO: Check the checksum */
 
@@ -230,6 +187,13 @@ static void master_task(void *pvParameters)
         	handle->config.messageTable[msg_idx].handler((void*)lin1p3_message);
         }
     }
+}
+
+unsigned char checksum(unsigned char *ptr, size_t sz) {
+	unsigned char chk = 0;
+	while (sz-- != 0)
+		chk -= *ptr++;
+	return chk;
 }
 
 static void slave_task(void *pvParameters)
@@ -263,12 +227,27 @@ static void slave_task(void *pvParameters)
         vTaskSuspend(NULL);
     }
 
+    int i=0;
+
     while(1) {
     	/* Init the message header buffer */
     	memset(lin1p3_header, 0, size_of_lin_header_d);
     	/* Wait for header on the UART */
-    	UART_RTOS_Receive(&(handle->uart_rtos_handle), lin1p3_header, size_of_lin_header_d, &n);
+
+
+    	UART_SetBaudRate(UART4, handle->config.bitrate/2,CLOCK_GetFreq(UART4_CLK_SRC));
+
+    	UART_RTOS_Receive(&(handle->uart_rtos_handle), lin1p3_header, 1, &n);
+
+    	UART_SetBaudRate(UART4, handle->config.bitrate,CLOCK_GetFreq(UART4_CLK_SRC));
+
+    	UART_RTOS_Receive(&(handle->uart_rtos_handle), &lin1p3_header[1], 2, &n);
+
+    	//while((kUART_RxDataRegFullFlag & UART_GetStatusFlags(UART4))<1);
     	/* Check header */
+
+    	//for(i=0;i<3000;i++){}
+
     	if((lin1p3_header[0] != 0x00) &&
     	   (lin1p3_header[1] != 0x55)) {
     		/* TODO: Check ID parity bits */
@@ -305,18 +284,21 @@ static void slave_task(void *pvParameters)
     		break;
     	}
     	/* TODO: Add the checksum to the message */
+    	unsigned char x[4] = {0};
+    	unsigned char y = checksum(lin1p3_message, sizeof(lin1p3_message));
+    	x[0] = lin1p3_message[0];
+    	x[1] = lin1p3_message[1];
+    	x[2] = lin1p3_message[2];
+    	x[3] = y;
+
     	message_size+=1;
     	/* Send the message data */
-    	UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_message, message_size);
+    	UART_SetBaudRate(UART4, handle->config.bitrate,CLOCK_GetFreq(UART4_CLK_SRC));
+    	uint32_t myFlags = UART_GetStatusFlags(UART4);
+    	UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)x, 4);
+    	//UART_RTOS_Send(&(handle->uart_rtos_handle), (uint8_t *)lin1p3_message, message_size);
+
+    	while((kUART_TransmissionCompleteFlag & UART_GetStatusFlags(UART4))<1);
+
     }
-}
-
-/*!
- * @brief Software timer callback.
- */
-static void SwTimerCallback(TimerHandle_t xTimer)
-{
-    xTimerStop(SwTimerHandle,0);
-    flag = 0;
-
 }

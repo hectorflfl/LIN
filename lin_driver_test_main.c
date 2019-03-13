@@ -5,26 +5,15 @@
  */
 
 /* FreeRTOS kernel includes. */
-/* Standard includes. */
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-
-/* Kernel includes. */
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 #include "timers.h"
 
 /* Freescale includes. */
 #include "fsl_device_registers.h"
 #include "fsl_debug_console.h"
 #include "board.h"
-
-#include "pin_mux.h"
-#include "clock_config.h"
-
-
-
 
 #include "fsl_uart_freertos.h"
 #include "fsl_uart.h"
@@ -33,15 +22,10 @@
 #include "clock_config.h"
 #include "lin1d3_driver.h"
 #include "FreeRTOSConfig.h"
-
-
-
-
-
 /*******************************************************************************
  * Definitions
  ******************************************************************************/
-#define xJUST_MASTER
+//#define xJUST_MASTER
 
 /* UART instance and clock */
 #define MASTER_UART UART3
@@ -91,13 +75,9 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitPins();
     BOARD_BootClockRUN();
-    BOARD_InitDebugConsole();
-    SystemCoreClockUpdate();
-
 
     NVIC_SetPriority(MASTER_UART_RX_TX_IRQn, 5);
     NVIC_SetPriority(SLAVE_UART_RX_TX_IRQn, 5);
-
 
 
     if (xTaskCreate(test_task, "test_task", test_task_heap_size_d, NULL, init_task_PRIORITY, NULL) != pdPASS)
@@ -117,11 +97,13 @@ int main(void)
  */
 static void test_task(void *pvParameters)
 {
+
 	int error;
 	lin1d3_nodeConfig_t node_config;
 	lin1d3_handle_t* master_handle;
 	lin1d3_handle_t* slave_handle;
 	/* Set Master Config */
+
 	node_config.type = lin1d3_master_nodeType;
 	node_config.bitrate = 9600;
 	node_config.uartBase = MASTER_UART;
@@ -165,15 +147,18 @@ static void test_task(void *pvParameters)
 
 	while (kStatus_Success == error)
     {
+		/*
     	vTaskDelay(200);
     	lin1d3_masterSendMessage(master_handle, app_message_id_1_d);
     	vTaskDelay(200);
     	lin1d3_masterSendMessage(master_handle, app_message_id_2_d);
     	vTaskDelay(200);
     	lin1d3_masterSendMessage(master_handle, app_message_id_3_d);
+    	*/
     }
 
     vTaskSuspend(NULL);
+
 }
 
 
